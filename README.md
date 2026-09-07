@@ -4,8 +4,18 @@ A multi-agent AI-SRE system that compresses the investigation phase of an incide
 on-call engineer a **validated**, ready-to-review fix — with an explicit, inspectable safety gate
 between "an AI proposed something" and "something executes."
 
-> **Status:** v1 in development. Portfolio project (Solutions Architect / AI Engineer track),
-> one-semester timeline. See [`docs/sprints.md`](docs/sprints.md) for the current sprint.
+> ### Build status — Sprint 1 of 6
+>
+> **Working today:** typed stage contracts, an unforgeable content-derived `proposal_hash`,
+> the `rollback` Validator rule (risk row 7) with tests, and a CI check that fails if the
+> Executor's IAM policy drifts from its action set.
+>
+> **Not built yet:** the remaining five Validator rules, Triage, Worker, Executor, the
+> sandbox app's endpoints, and all AWS infrastructure. Sections below describe the design
+> those will implement — read them as specification, not as a description of running code.
+>
+> Portfolio project (Solutions Architect / AI Engineer track), one semester, part-time.
+> Current sprint: [`docs/sprints.md`](docs/sprints.md).
 
 ---
 
@@ -15,12 +25,24 @@ On-call engineers lose roughly the first **45 minutes** of every incident to inv
 correlating logs, checking recent deploys, digging through metrics — before they can even begin
 deciding what to do.
 
+That 45 minutes is *industry motivation, and it is never used as this project's denominator.*
+It describes a human meeting a novel incident in an unfamiliar production system; Ops Sentinel
+handles three known incident types in a purpose-built sandbox with a playbook for each. Comparing
+them would inflate the headline and collapse under the first question. The measured baseline is
+**the author solving the same sandbox incident by hand** — a smaller number, and a defensible one.
+
 The obvious fix is "point an LLM at it." The reason that isn't already solved is the second problem:
 agentic tooling in real SDLC work fails not by being obviously wrong, but by **lacking
 self-validation**. It produces plausible-looking output with no signal about whether it's safe to
-trust. This is structural, not anecdotal — one study found 80% of organizations reported their AI
-agents had already acted beyond intended scope, and a survey of 286 organizations found nearly a
-third are running agents in production while governance lags behind.
+trust.
+
+Industry data suggests this is structural rather than anecdotal — reported rates of agents acting
+beyond their intended scope are high, and adoption in production is running ahead of governance.
+
+> **On the numbers:** earlier drafts of this README quoted two specific statistics without
+> citations. They have been removed pending sources I can link. A project whose thesis is
+> "don't trust plausible-looking claims without a verification step" cannot ship uncited
+> figures in its own problem statement.
 
 Ops Sentinel's thesis: **the interesting engineering is not the diagnosis, it's the gate.** The
 Validator is the portfolio piece. Everything else exists to give it something real to reject.
@@ -67,9 +89,17 @@ CloudWatch Alarm
 ```
 
 **The strongest guarantee in the system doesn't depend on the Validator being correct.** The
-Executor's IAM role is scoped at deploy time to its exact known action set — even a fully
-manipulated agent cannot act outside that list. The Validator is defense in depth on top of that,
-not the only thing standing between the LLM and your infrastructure.
+Executor's IAM role is scoped at deploy time to its known action set, so a fully manipulated agent
+still cannot reach outside it. The Validator is defense in depth on top of that, not the only thing
+standing between the LLM and your infrastructure.
+
+**With two caveats this project states rather than glosses.** `ecs:UpdateService` is a single IAM
+action covering all three action types, so IAM cannot tell a rollback from a restart from a scale —
+the guarantee is real but coarser than one-action-per-action-type. And AWS exposes no IAM condition
+key for `desiredCount`, so the **cost ceiling (row 4) cannot live in IAM at all**; it is enforced in
+the Validator, in ECS Service Auto Scaling max capacity, and in the Executor's re-check instead.
+[ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md) has the verification and the sources. A
+reviewer who finds a gap like this unaided discounts everything else in the register.
 
 ---
 
@@ -95,7 +125,7 @@ ops-sentinel/
 ├── infra/               Terraform — ECS Fargate, RDS, ALB, CloudWatch, EventBridge, IAM
 │   └── policies/        the Executor's minimum-privilege IAM policy (reviewed, not generated)
 ├── docs/                business case, risk register, architecture, sprints, ADRs
-├── scripts/             local dev + demo drivers
+├── scripts/             local dev + demo drivers, and the IAM drift check CI runs
 └── .github/workflows/   CI
 ```
 
@@ -110,11 +140,11 @@ failure and the test asserting it's defended.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Orchestration | **Python 3.12 + LangGraph** | Explicit state machine with inspectable transitions — the audit trail falls out of the graph rather than being bolted on |
+| Orchestration | **Python 3.12 + LangGraph** | Durable suspend/resume across the human approval pause, which may span hours and process death — the hard part of this graph is the pause, not the five-node topology. Conditional on [ADR-0004](docs/adr/0004-pipeline-runtime.md); see [ADR-0002](docs/adr/0002-langgraph-orchestration.md) |
 | Contracts | **Pydantic v2** | Stage boundaries are typed and validated; a malformed proposal fails at the boundary, not deep in the Validator |
 | Validator | **Plain Python, no LLM** | A safety gate judged by an LLM is not a safety gate. Every rule is readable, unit-testable, and deterministic |
 | Executor | **boto3, no LLM** | Fixed action set, scoped IAM role, runs only on approved proposals |
-| Sandbox app | **Java 21 + Spring Boot 3, Spring Data JPA** | Covers the Java/Spring side of the job search alongside .NET/C#, and absorbs the Spring Boot API that was previously deferred to v2 |
+| Sandbox app | **Java 21 + Spring Boot 3, Spring Data JPA** | A second portfolio surface, deliberately: the pipeline only needs a service that fails on command, but a realistic one produces realistic incidents — a null dereference in a repository call is a more credible bad deploy than a hardcoded 500 |
 | Data | **Postgres (RDS)** | Orders persistence for the sandbox app |
 | Runtime | **ECS Fargate + ALB** | Real deploys, real rollbacks — chaos trigger #1 is an actual bad task-definition rollout, not a script |
 | Signals | **CloudWatch** (Container Insights, logs, alarms) | The real trigger source; the pipeline reads state here, never via actuator |
@@ -132,11 +162,11 @@ All are deterministic and enforced outside the LLM's control.
 | # | Rule | Behavior on breach |
 |---|---|---|
 | 1 | Action must target a **single named resource ID** | Wildcards/tag patterns never fast-path — always strict approval |
-| 2 | No **credentials or PII** in the proposal | Scrub or reject before a human ever reads it |
+| 2 | No **credentials or PII** in the proposal | The gate **rejects**; redaction happens at rendering. Scrubbing would change the proposal's hash and break the Executor's verification chain |
 | 3 | Worker **iteration cap** | Fail loudly and page a human; never continue silently |
-| 4 | **Cost ceiling** — max instance count / spend delta | Reject scale actions with no upper bound |
-| 5 | Ingested content is **data, never instructions** | Explicitly tested with a crafted injection case |
-| 6 | Executor IAM scoped to its **exact action set** | Enforced at deploy time, independent of the Validator |
+| 4 | **Cost ceiling** — max instance count | Reject scale actions with no upper bound. Cannot be enforced in IAM ([ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md)) — so enforced three times: Validator, ECS autoscaling max capacity, Executor re-check |
+| 5 | Action must be **derivable from structured incident data** | Target must be in `affected_resource_ids`; action type must be in the playbook for the incident type. Tested with a crafted injection case |
+| 6 | Executor IAM scoped to its **known action set** | Enforced at deploy time, independent of the Validator; drift from the enum fails CI |
 | 7 | **Rollback plan required** | Reject any proposal without a defined rollback step |
 | 8 | Documented **false-positive tolerance** | A designed trade-off, tracked over time — not an accident |
 
@@ -176,7 +206,8 @@ part of the story, not an afterthought.
 ## Success criteria (v1)
 
 - [ ] Full pipeline runs end-to-end on a real, self-triggered incident in a personal AWS sandbox
-- [ ] **Time-to-diagnosis** measured from alert to validated proposal, framed against the ~45-min manual baseline
+- [ ] **Time-to-diagnosis** measured from alert to validated proposal, reported as an absolute
+      number against a **self-timed manual baseline on the same sandbox incident**
 - [ ] A recorded demo where the **Validator blocks an unsafe fix**
 - [ ] A presentable audit trail of every decision
 
@@ -189,18 +220,25 @@ part of the story, not an afterthought.
 
 ## Getting started
 
+These run today, on a clean checkout:
+
 ```bash
-# Agents
-cd agents && python3 -m venv .venv && source .venv/bin/activate
+# Agents — 17 tests, ruff, and mypy --strict all pass
+cd agents
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
+pytest -q && ruff check . && mypy src
 
-# Sandbox app
-cd sandbox-app && ./mvnw spring-boot:run
+# Sandbox app — compiles and runs its unit tests (no database needed)
+cd sandbox-app && ./mvnw -B verify
 
-# Infra (sandbox env)
-cd infra/terraform/envs/sandbox && terraform init && terraform plan
+# Risk row 6 drift check — fails if the IAM policy and the ActionType enum disagree
+python3 scripts/check_iam_scope.py
 ```
+
+**Not yet runnable**, and deliberately not listed as if it were: `./mvnw spring-boot:run`
+(needs Postgres and the endpoints from Sprint 2) and `terraform plan` (no `.tf` files
+until Sprint 3).
 
 See [`docs/architecture.md`](docs/architecture.md) for the full design and
 [`docs/sprints.md`](docs/sprints.md) for the delivery plan.

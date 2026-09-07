@@ -35,3 +35,6 @@ credentials
 .idea/
 .vscode/
 *.swp
+
+# Maven wrapper: the jar is downloaded by mvnw itself (wrapperUrl in the properties)
+.mvn/wrapper/maven-wrapper.jar
