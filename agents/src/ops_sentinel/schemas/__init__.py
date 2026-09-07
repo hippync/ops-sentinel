@@ -5,8 +5,9 @@ rather than deep inside the Validator. See docs/architecture.md section 2.
 """
 
 from ops_sentinel.schemas.models import (
-    ActionType,
     Action,
+    ActionParams,
+    ActionType,
     ApprovalPath,
     ApprovalRecord,
     AuditRecord,
@@ -14,14 +15,18 @@ from ops_sentinel.schemas.models import (
     FixProposal,
     Incident,
     IncidentType,
+    RestartServiceParams,
     Rollback,
+    RollbackTaskDefinitionParams,
     RuleOutcome,
+    SetDesiredCountParams,
     Severity,
     Verdict,
 )
 
 __all__ = [
     "Action",
+    "ActionParams",
     "ActionType",
     "ApprovalPath",
     "ApprovalRecord",
@@ -30,8 +35,11 @@ __all__ = [
     "FixProposal",
     "Incident",
     "IncidentType",
+    "RestartServiceParams",
     "Rollback",
+    "RollbackTaskDefinitionParams",
     "RuleOutcome",
     "Severity",
+    "SetDesiredCountParams",
     "Verdict",
 ]
