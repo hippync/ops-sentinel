@@ -23,6 +23,7 @@ server:
 
 opssentinel:
   chaos:
-    # Chaos endpoints require this header. Never commit a real value.
-    admin-api-key: ${CHAOS_ADMIN_API_KEY:}
+    # Fails closed: with enabled=true and a blank or short key the app refuses to boot.
+    # See ChaosProperties. Never commit a real value.
     enabled: ${CHAOS_ENABLED:false}
+    admin-api-key: ${CHAOS_ADMIN_API_KEY:}
