@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: orders-sandbox
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/orders}
+    username: ${DB_USER:orders}
+    password: ${DB_PASSWORD:orders}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Actuator is for local debugging only. Ops Sentinel reads state via
+        # CloudWatch, never via actuator calls.
+        include: health,info
+
+server:
+  port: 8080
+
+opssentinel:
+  chaos:
+    # Chaos endpoints require this header. Never commit a real value.
+    admin-api-key: ${CHAOS_ADMIN_API_KEY:}
+    enabled: ${CHAOS_ENABLED:false}

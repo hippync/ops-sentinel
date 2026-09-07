@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "DRAFT — Sprint 0 deliverable, not yet reviewed or applied.",
+    "Risk row 6. This policy must grant exactly the action set in the ActionType enum",
+    "at agents/src/ops_sentinel/schemas/models.py and nothing more. If those drift, the",
+    "guarantee that a manipulated agent cannot act outside its known action set is gone.",
+    "Resource ARNs below are placeholders pending the Sprint 3 Terraform apply.",
+    "Answer the risk register's pre-mortem question before accepting this scope."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RollbackAndRestartOrdersServiceOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:UpdateService",
+        "ecs:DescribeServices"
+      ],
+      "Resource": "arn:aws:ecs:REGION:ACCOUNT:service/ops-sentinel-sandbox/orders-api",
+      "Condition": {
+        "_comment": "TODO(sprint-0): bound desired-count changes here, not only in the Validator (risk row 4)"
+      }
+    },
+    {
+      "Sid": "ReadTaskDefinitionHistoryForRollback",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeTaskDefinition",
+        "ecs:ListTaskDefinitions"
+      ],
+      "Resource": "*",
+      "_comment": "Read-only. Rollback requires knowing the previous revision."
+    }
+  ]
+}
