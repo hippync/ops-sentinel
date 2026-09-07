@@ -1,0 +1,9 @@
+{
+  "_note": "This file may carry comments; executor-policy.json may NOT (AWS rejects unknown keys). Read alongside docs/adr/0007-row-4-cannot-live-in-iam.md.",
+  "action_type_to_iam": {
+    "ecs:rollback_task_definition": ["ecs:UpdateService", "ecs:DescribeServices", "ecs:DescribeTaskDefinition", "ecs:ListTaskDefinitions"],
+    "ecs:restart_service": ["ecs:UpdateService", "ecs:DescribeServices"],
+    "ecs:set_desired_count": ["ecs:UpdateService", "ecs:DescribeServices"]
+  },
+  "_known_weakness": "ecs:UpdateService is a single IAM action covering all three ActionTypes. IAM cannot distinguish them, and cannot bound desiredCount. Row 6's guarantee is therefore coarser than one-action-per-ActionType. Stated plainly rather than glossed."
+}

@@ -5,20 +5,51 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default on a repo whose thesis is least privilege.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      agents: ${{ steps.filter.outputs.agents }}
+      sandbox: ${{ steps.filter.outputs.sandbox }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            agents:
+              - 'agents/**'
+              - '.github/workflows/ci.yml'
+            sandbox:
+              - 'sandbox-app/**'
+              - '.github/workflows/ci.yml'
+            infra:
+              - 'infra/**'
+              - 'agents/src/ops_sentinel/schemas/models.py'
+              - '.github/workflows/ci.yml'
+
   agents:
     name: agents (python)
+    needs: changes
+    if: needs.changes.outputs.agents == 'true'
     runs-on: ubuntu-latest
-    # Path-filtered: a Java-only change should not run this suite (see ADR-0001).
-    if: |
-      github.event_name == 'push' ||
-      contains(join(github.event.pull_request.labels.*.name, ','), 'agents') ||
-      true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agents/pyproject.toml
       - name: Install
         working-directory: agents
         run: pip install -e ".[dev]"
@@ -34,6 +65,8 @@ jobs:
 
   sandbox-app:
     name: sandbox-app (java)
+    needs: changes
+    if: needs.changes.outputs.sandbox == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,14 +77,42 @@ jobs:
           cache: maven
       - name: Build and test
         working-directory: sandbox-app
-        run: mvn -B verify
+        run: ./mvnw -B verify
+
+  iam-scope-matches-action-set:
+    name: IAM scope matches ActionType enum
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Risk row 6's guarantee holds only if the policy and the enum agree.
+      # Nothing but this check stops them drifting apart silently.
+      - name: Check drift
+        run: python3 scripts/check_iam_scope.py
 
   terraform:
     name: infra (terraform)
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      - name: Skip if no config yet
+        id: has_tf
+        run: |
+          count=$(find infra/terraform -name '*.tf' | wc -l)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Found $count .tf files"
       - name: Format check
+        if: steps.has_tf.outputs.count != '0'
         working-directory: infra/terraform
         run: terraform fmt -check -recursive
+      - name: Validate
+        if: steps.has_tf.outputs.count != '0'
+        working-directory: infra/terraform/envs/sandbox
+        run: terraform init -backend=false && terraform validate
