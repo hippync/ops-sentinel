@@ -57,16 +57,24 @@ These are constraints, not aspirations. Each one is testable, and CI should fail
                     │                              EventBridge rule                          │
                     └────────────────────────────────────┬───────────────────────────────────┘
                                                          │
-                                    ┌────────────────────▼────────────────────┐
-                                    │       Ops Sentinel pipeline (Python)     │
-                                    │                                          │
-                                    │   Triage ─► Worker ─► Validator ─► Gate  │
-                                    │                           │         │    │
-                                    │                        reject    approve │
-                                    │                           │         │    │
-                                    │                           ▼         ▼    │
-                                    │                       Audit log  Executor│
-                                    └──────────────────────────────────────────┘
+                                    ┌────────────────────▼─────────────────────────┐
+                                    │      Ops Sentinel pipeline (Python)          │
+                                    │                                              │
+                                    │   Triage ─► Worker ─► Validator              │
+                                    │      └──── OTel spans ────┘  │               │
+                                    │                              ▼               │
+                                    │                       Decision-point         │
+                                    │                         extraction           │
+                                    │                       (never a gate)         │
+                                    │                    │                │        │
+                                    │                  reject          approve     │
+                                    │                    │                │        │
+                                    │                    ▼                ▼        │
+                                    │            Decision register  Approval gate  │
+                                    │                                     │        │
+                                    │                                     ▼        │
+                                    │                                  Executor    │
+                                    └──────────────────────────────────────────────┘
                                                                           │
                                                           scoped IAM role │
                                                     (ECS update-service,  ▼
@@ -79,8 +87,10 @@ These are constraints, not aspirations. Each one is testable, and CI should fail
 |---|---|---|
 | CloudWatch → Triage | Alarm payload, log excerpts | Parsed into typed fields; raw text never reaches an instruction position |
 | Worker → Validator | A `FixProposal` | Pydantic schema validation, then 7 deterministic rules |
+| Pipeline → Extractor | OTel spans, carrying `Evidence.excerpt`-derived text | Read-only. The extractor cannot pass, reject, re-score, or modify a proposal, and never alters `proposal_hash` ([ADR-0008](adr/0008-decision-point-extraction.md)) |
+| Extractor → Approval | `DecisionPoint` cards, rendered above the buttons | Display text only; redacted through `audit/redaction` on the way to a human. Extraction failure downgrades fast-path to strict |
 | Validator → Approval | A scored, validated proposal | Score decides fast-path vs strict; never skipped |
-| Approval → Executor | An approved proposal + human identity | Executor re-checks the approval record before acting |
+| Approval → Executor | An approved proposal + human identity | Executor re-checks the approval record before acting. The approval binds to `proposal_hash`, never to a Slack message ID ([ADR-0005](adr/0005-approval-surface.md)) |
 | Executor → AWS | A fixed set of API calls | IAM role scoped to exactly those actions (risk row 6) |
 
 The Executor **re-validates** rather than trusting the record handed to it. A proposal that reaches
@@ -153,11 +163,50 @@ options* for a legitimately in-scope resource. That is a reduced blast radius, n
 legal option is still one a human approves. This is target-and-type derivability, not a general
 prompt-injection defense, and calling it the latter would be overselling it.
 
-### 3.4 Approval gate
+### 3.4 Decision-point extraction
+**In:** OTel spans from Triage and the Worker, plus the `FixProposal` and `Verdict` ·
+**Out:** 3–5 `DecisionPoint` records · **Gates nothing**
+
+See [ADR-0008](adr/0008-decision-point-extraction.md). The Validator checks the *output* against
+explicit rules. This stage exposes the *path* — which moments in the trajectory actually required
+human judgment — so the approver has something to read before signing rather than only something
+to see. Each decision point answers four questions: what was chosen, what alternatives were
+viable, what it rests on, and what breaks downstream if it is wrong.
+
+**This stage is not a gate, and the distinction is load-bearing.** It has no edge to the Executor
+and cannot pass, reject, re-score, or modify a proposal. Design principle 1 is about the *gate*;
+a component that produces reading material for a human is a different kind of thing, and the LLM
+classifier in build step 4 does not put model judgment into the safety path. Four further
+constraints follow from that:
+
+- **It never touches `proposal_hash`.** Cards are keyed *by* the hash and are never part of the
+  hashed content — the same reason `secrets.py` rejects rather than scrubs.
+- **Extraction failure downgrades fast-path to strict.** Fail-closed without blocking incident
+  response; "extraction unavailable" is itself information for the approver.
+- **Cards render through `audit/redaction`**, since decision points quote attacker-influenced
+  excerpt content on its way to a human surface.
+- **It runs on the reject path too.** A rejected proposal pages a human, and that human needs the
+  path as much as an approver does.
+
+The rule-based extractor is deterministic and written in the Validator's idiom. Five families:
+irreversible action (row 7), external write (row 1), out-of-scope resource access (row 5),
+Triage's `incident_type` classification (row 5 — it selects the playbook that constrains every
+legal action downstream), and a diagnosis that changed between Worker iterations (row 3). An LLM
+classifier over the remaining spans is built **only if** the rules alone leave the miss rate above
+the threshold [ADR-0009](adr/0009-extraction-evaluation-harness.md) commits to in advance.
+
+### 3.5 Approval gate
 Fast-path (single click, pre-validated) or strict review, per the scoring rubric. No auto-approval
 path exists. The approval record captures who approved, when, and which exact proposal hash.
 
-### 3.5 Executor
+The surface is a Slack app ([ADR-0005](adr/0005-approval-surface.md)), with the decision-point
+cards rendered above the approve/reject buttons — including on the fast path, where a single click
+on a low-severity, high-confidence, reversible proposal is exactly the signature most likely to be
+given without a reading. The interaction webhook verifies Slack's request signature, and the
+approval binds to `proposal_hash` rather than to a message ID, so a forged or replayed payload
+fails the Executor's existing check rather than needing a new one.
+
+### 3.6 Executor
 **No LLM.** A dispatch table from `action.type` to a boto3 call. Re-verifies the approval record and
 proposal hash, executes, records the result, and confirms the rollback plan is still valid.
 
@@ -166,10 +215,19 @@ Supported v1 actions (this list *is* the IAM policy in `infra/policies/`):
 - `ecs:restart_service` — force a new deployment of the current revision
 - `ecs:set_desired_count` — bounded by the cost ceiling
 
-### 3.6 Audit log
+### 3.7 Audit log — a decision register
 One structured record per pipeline run: the alarm, the triage classification, every Worker
-iteration, the full Validator verdict with per-rule outcomes, the approval record, and the execution
-result. This is a deliverable, not a debugging aid — it's shown in the demo.
+iteration, the full Validator verdict with per-rule outcomes, the extracted decision points, the
+approval record, and the execution result. This is a deliverable, not a debugging aid — it's shown
+in the demo.
+
+Since ADR-0008, each decision point is an independently addressable item rather than a line in a
+narrative, which makes this **a decision register rather than an approval history**: a record of
+what was decided and on what basis, not a list of who clicked yes. That access pattern is what
+selected DynamoDB in [ADR-0006](adr/0006-audit-log-store.md) — partition key `run_id`, sort key
+`record_type#id`, every write through `audit/redaction`, and written by the pipeline's task role
+rather than the Executor's, since writing audit records is not in the Executor's action set and
+must not be added to it (risk row 6).
 
 ---
 
@@ -180,20 +238,24 @@ inspectable: transitions are the audit trail rather than something reconstructed
 afterward.
 
 ```
-                 ┌──────► human_page ◄──────┐
-                 │        (terminal)         │
-   triage ── unknown                         │ cap breach / reject
-      │                                      │
-      └─► worker ──► validator ──┬── reject ─┘
-             ▲                   │
-             └─ retry (capped) ──┤
-                                 └── pass ──► approval ──┬── approved ──► executor ──► audit
-                                                         └── denied ────────────────► audit
+                 ┌──────► human_page ◄────────────────┐
+                 │        (terminal)                   │
+   triage ── unknown                                   │ cap breach
+      │                                                │
+      └─► worker ──► validator ──► extract ─── reject ─┘
+             ▲            │           │
+             └─ retry ────┘           └─── pass ──► approval ──┬─ approved ─► executor ─► audit
+               (capped)                                        └─ denied ──────────────► audit
 ```
 
 Every terminal path writes to the audit log. There is no path from `worker` to `executor` that
 doesn't traverse `validator` and `approval` — enforced by graph topology, not convention, and
 asserted in an integration test.
+
+`extract` sits on both human-facing paths, because a rejected proposal pages a human who needs the
+trajectory as much as an approver does. It has **no outgoing edge to `executor`**, which is the
+topological statement of ADR-0008's first commitment: the extractor is not a gate. The integration
+test asserts that absence alongside the `worker`→`executor` one.
 
 ---
 
@@ -218,9 +280,18 @@ investigating from scratch.
 Tracked as ADRs in [`adr/`](adr/) as they're resolved.
 
 - Where does the pipeline run — Lambda, ECS task, or Step Functions? ([ADR-0004](adr/0004-pipeline-runtime.md)
-  — **blocks ADR-0002**, since Step Functions would supersede the case for LangGraph)
-- Approval surface for v1 ([issue #1](https://github.com/hippync/ops-sentinel/issues/1)) — also
-  blocks ADR-0002: an in-process CLI approval removes the durable-suspend argument entirely
-- Audit log store ([issue #2](https://github.com/hippync/ops-sentinel/issues/2))
+  — **blocks ADR-0002**, since Step Functions would supersede the case for LangGraph). This is now
+  the only remaining blocker on 0002; the approval surface resolved in its favour in
+  [ADR-0005](adr/0005-approval-surface.md)
 - False-positive tolerance threshold — the risk-row-8 number, chosen and documented before the demo
   rather than justified after it
+- **Does a decision-point taxonomy transfer across domains?** Incident response → credit
+  decisioning → legal review. Unknown, and only answerable empirically — recorded as open in
+  [ADR-0008](adr/0008-decision-point-extraction.md), deliberately not resolved. If it transfers,
+  the taxonomy is a more interesting artifact than this implementation of it
+- **Is this pipeline's trajectory thick enough to test that hypothesis?** Five Worker iterations
+  over three action types may mean the decision points *are* the trajectory, in which case the
+  measured miss rate says little about the general case. Flagged before the layer is built
+- The miss-rate curve's dial, the gating threshold for the LLM classifier, and the operational
+  form of the kill criterion — all open in [ADR-0009](adr/0009-extraction-evaluation-harness.md)
+  and all required before a number is published

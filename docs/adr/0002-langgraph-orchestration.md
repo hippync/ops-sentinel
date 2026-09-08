@@ -1,10 +1,10 @@
 # ADR-0002 — LangGraph for orchestration
 
-**Status:** Accepted · **Date:** 2026-09-07 · **Revised:** 2026-09-07 after review
+**Status:** Accepted · **Date:** 2026-09-07 · **Revised:** 2026-09-08
 
 **Depends on:** [ADR-0004](0004-pipeline-runtime.md) (runtime) and
-[ADR-0005](0005-approval-surface.md) (approval surface). See "Conditionality" below —
-this decision is not fully safe until those land.
+[ADR-0005](0005-approval-surface.md) (approval surface). 0005 has landed and resolved in
+this decision's favour; **0004 has not, and still blocks.** See "Conditionality" below.
 
 ## Context
 
@@ -45,15 +45,22 @@ decision as pure architecture is what makes an ADR read as post-hoc rationalizat
 
 ## Conditionality
 
-If [ADR-0005](0005-approval-surface.md) resolves to an in-process CLI approval, the
-durable-suspend argument evaporates and this decision rests only on the two supporting
-reasons — which may not clear the bar for a framework dependency. If
-[ADR-0004](0004-pipeline-runtime.md) resolves to Step Functions, there are two
-orchestrators and LangGraph collapses to a node body.
+**0005 resolved on 2026-09-08, in this decision's favour.** The approval surface is a
+Slack app: genuinely out-of-process, plausibly hours long, and surviving process death.
+That is the durable suspend/resume this ADR was accepted on, so the load-bearing argument
+above is now a real requirement rather than an anticipated one. Had 0005 landed on an
+in-process CLI prompt, the argument would have evaporated and this decision would have
+rested only on the two supporting reasons — which may not have cleared the bar for a
+framework dependency.
 
-**Therefore: 0004 and 0005 are decided before any orchestration code is written.** The
-original sequencing — accepting the orchestration library before the runtime it runs on —
-was backwards, and this note records the correction rather than hiding it.
+**0004 has not resolved and still blocks.** If
+[ADR-0004](0004-pipeline-runtime.md) lands on Step Functions, AWS provides the durable
+pause, there are two orchestrators, and LangGraph collapses to a node body — regardless of
+what 0005 chose.
+
+**Therefore: 0004 is decided before any orchestration code is written.** The original
+sequencing — accepting the orchestration library before the runtime it runs on — was
+backwards, and this note records the correction rather than hiding it.
 
 ## Consequences
 

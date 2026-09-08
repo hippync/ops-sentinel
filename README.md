@@ -11,8 +11,10 @@ between "an AI proposed something" and "something executes."
 > Executor's IAM policy drifts from its action set.
 >
 > **Not built yet:** the remaining five Validator rules, Triage, Worker, Executor, the
-> sandbox app's endpoints, and all AWS infrastructure. Sections below describe the design
-> those will implement — read them as specification, not as a description of running code.
+> decision-point extraction layer, the sandbox app's endpoints, and all AWS infrastructure.
+> Sections below describe the design those will implement — read them as specification, not
+> as a description of running code. **No miss rate has been measured yet**; every number in
+> the extraction section is a target.
 >
 > Portfolio project (Solutions Architect / AI Engineer track), one semester, part-time.
 > Current sprint: [`docs/sprints.md`](docs/sprints.md).
@@ -73,19 +75,25 @@ CloudWatch Alarm
 │  VALIDATOR  │  ◄── the differentiator: deterministic rules, no LLM judgment
 └─────────────┘     blast radius · secrets/PII · cost ceiling · rollback plan · injection
       │
-      ├── REJECT ──► audit log + page a human, nothing executes
-      │
       ▼  score: severity × confidence × reversibility
 ┌─────────────┐
+│  EXTRACTION │  3-5 decision points from the trajectory — what was chosen, what else
+└─────────────┘  was viable, what it rests on, what breaks if it's wrong
+      │          reads OTel spans · gates nothing · cannot alter the proposal
+      │
+      ├── REJECT ──► decision register + page a human, nothing executes
+      │
+      ▼
+┌─────────────┐
 │  APPROVAL   │  fast-path (1 click) or strict gate — never skipped
-└─────────────┘
+└─────────────┘  cards render above the buttons, fast path included
       │
       ▼
 ┌─────────────┐
 │  EXECUTOR   │  deterministic, NO LLM, minimum-privilege IAM
 └─────────────┘
       │
-      ▼  audit trail (every decision, every rejection, every input)
+      ▼  decision register (every decision, every rejection, every input)
 ```
 
 **The strongest guarantee in the system doesn't depend on the Validator being correct.** The
@@ -112,10 +120,12 @@ ops-sentinel/
 │       ├── triage/      alert → severity + incident type
 │       ├── worker/      investigate → propose (capped iterations)
 │       ├── validator/   deterministic rule gate — one module per risk row
+│       ├── extraction/  decision points from the trajectory — gates nothing
+│       ├── telemetry/   OTel spans, GenAI semantic conventions
 │       ├── executor/    no LLM, min-privilege, post-approval only
 │       ├── graph/       LangGraph orchestration + state
 │       ├── schemas/     Pydantic contracts between stages
-│       └── audit/       structured decision log
+│       └── audit/       the decision register
 ├── sandbox-app/         Java 21 / Spring Boot 3 — the system under observation
 │   └── src/main/java/com/opssentinel/orders/
 │       ├── api/         Orders CRUD (normal traffic)
@@ -143,6 +153,9 @@ failure and the test asserting it's defended.
 | Orchestration | **Python 3.12 + LangGraph** | Durable suspend/resume across the human approval pause, which may span hours and process death — the hard part of this graph is the pause, not the five-node topology. Conditional on [ADR-0004](docs/adr/0004-pipeline-runtime.md); see [ADR-0002](docs/adr/0002-langgraph-orchestration.md) |
 | Contracts | **Pydantic v2** | Stage boundaries are typed and validated; a malformed proposal fails at the boundary, not deep in the Validator |
 | Validator | **Plain Python, no LLM** | A safety gate judged by an LLM is not a safety gate. Every rule is readable, unit-testable, and deterministic |
+| Tracing | **OpenTelemetry**, GenAI semantic conventions | The extraction layer needs a structured trajectory to read, and a standard one keeps the decision-point work from being tied to this pipeline's shape. Worth having for debugging on its own |
+| Approval surface | **Slack app** | Out-of-process and asynchronous, which is what makes ADR-0002's durable-suspend argument real; Block Kit renders the decision cards without a UI to build. [ADR-0005](docs/adr/0005-approval-surface.md) |
+| Decision register | **DynamoDB** | A decision point is an independently addressable item, not a line in a narrative — keyed lookup beats log search here. [ADR-0006](docs/adr/0006-audit-log-store.md) |
 | Executor | **boto3, no LLM** | Fixed action set, scoped IAM role, runs only on approved proposals |
 | Sandbox app | **Java 21 + Spring Boot 3, Spring Data JPA** | A second portfolio surface, deliberately: the pipeline only needs a service that fails on command, but a realistic one produces realistic incidents — a null dereference in a repository call is a more credible bad deploy than a hardcoded 500 |
 | Data | **Postgres (RDS)** | Orders persistence for the sandbox app |
@@ -183,6 +196,86 @@ Every proposal is scored on three axes rather than a single approve/reject bit:
 
 ---
 
+## Decision-point extraction
+
+**Where it sits:** between the Validator and the approval gate. The Validator checks the *output*
+against explicit rules; this layer exposes the *path*.
+
+An approval gate that shows a human a proposed fix and two buttons is asking for **a signature
+without a reading**. The approver formally owns a decision they have no practical means of
+examining — documented responsibility with no epistemic basis behind it.
+
+That is not a quirk of this project. Supervision infrastructure is built for **artifacts**: a
+diff, a contract, a case file — something a person reads and signs. Agents produce
+**trajectories**: tool calls, intermediate state, a final answer, and a log nobody opens.
+Accountability still attaches to a named individual either way — so it survives the transition
+intact, and the basis for it does not.
+
+So instead of *"here is the proposed fix, approve or reject"*, the approver sees **3–5 extracted
+decision points**, each answering four questions:
+
+- **What was chosen** at this moment in the trajectory
+- **What alternatives were viable** — the branches genuinely available and not taken
+- **What it rests on** — the evidence or assumption the choice depends on
+- **What breaks downstream** if it is wrong
+
+### It is not a second gate
+
+This is the constraint everything else hangs off, and it is what keeps
+[ADR-0003](docs/adr/0003-no-llm-in-validator.md) intact. The extractor **cannot pass, reject,
+re-score, or modify a proposal**, and has no edge to the Executor. It never touches
+`proposal_hash` — cards are keyed *by* the hash, never part of the hashed content, for the same
+reason `secrets.py` rejects rather than scrubs. Extraction failure **downgrades fast-path to
+strict** rather than blocking the run. Cards render through `audit/redaction`, because decision
+points quote attacker-influenced log content on its way to a human. And they appear on the fast
+path too — a low-severity, high-confidence, reversible proposal is exactly the one approved
+without reading.
+
+### How the points are found
+
+A deterministic rule set first, written in the Validator's idiom, over OpenTelemetry spans from
+Triage and the Worker:
+
+| Family | Fires on | Risk row |
+|---|---|---|
+| Irreversible action | No clean rollback exists | 7 |
+| External write | A span that mutates rather than reads | 1 |
+| Out-of-scope resource access | A resource absent from `affected_resource_ids` | 5 |
+| Triage's `incident_type` call | Always — it selects the playbook constraining every later action | 5 |
+| Diagnosis changed mid-run | Evidence reinterpreted between Worker iterations | 3 |
+
+An LLM classifier over the remaining spans is built **only if** the rules alone leave the miss
+rate too high — and its output is visually marked, so a reader always knows which points are
+deterministic.
+
+### The deliverable is the miss rate, not the cards
+
+Anyone can wire an LLM to traces and produce plausible-looking cards. Almost nobody can state how
+often their system misses what mattered — and *"plausible-looking output with no signal about
+whether it's safe to trust"* is this project's own problem statement, so shipping this layer
+unmeasured would be the sharpest available self-inflicted wound.
+
+So: **a published miss rate on a reproducible harness**, plus the curve between that rate and the
+number of points surfaced. ~20 seeded incident scenarios, each with one critical decision labeled
+*before* any extraction rule is written, run against recorded alarm payloads and the fake
+executor — in CI, with no AWS account and no Slack workspace, so a reader can reproduce the
+number. [ADR-0009](docs/adr/0009-extraction-evaluation-harness.md) has the protocol, including
+the parts that are still open.
+
+**Kill criterion:** if after ~10 scenarios the extractor consistently surfaces either everything
+or nothing useful, the hypothesis is wrong for this domain and the layer is dropped. The OTel
+instrumentation and the evaluation harness stay — they are worth having independently.
+
+**Downstream effect:** the audit log becomes a **decision register rather than an approval
+history** — what was decided and on what basis, not a list of who clicked yes.
+
+**Open, and deliberately unresolved:** whether a decision-point taxonomy transfers across domains
+(incident response → credit → legal). Only answerable empirically.
+
+See [ADR-0008](docs/adr/0008-decision-point-extraction.md).
+
+---
+
 ## The sandbox app
 
 Deliberately small — a handful of Orders endpoints. It exists to generate real, controllable
@@ -209,12 +302,15 @@ part of the story, not an afterthought.
 - [ ] **Time-to-diagnosis** measured from alert to validated proposal, reported as an absolute
       number against a **self-timed manual baseline on the same sandbox incident**
 - [ ] A recorded demo where the **Validator blocks an unsafe fix**
-- [ ] A presentable audit trail of every decision
+- [ ] A presentable decision register covering every decision
+- [ ] **A published miss rate for decision-point extraction**, on a harness a reader can run —
+      plus the curve between that rate and the number of points surfaced. Stated as a measurement
+      with its caveats, or reported as a kill decision. Not stated at all until measured
 
 ### Scope
 
-**In (v1):** single sandbox app · Triage → Worker → Validator → human approval → Executor · one blocked-fix demo · audit log
-**Out (v1):** auto-execution without approval · multiple parallel workers · production deployment
+**In (v1):** single sandbox app · Triage → Worker → Validator → extraction → human approval → Executor · one blocked-fix demo · decision register · a measured extraction miss rate
+**Out (v1):** auto-execution without approval · multiple parallel workers · production deployment · cross-domain taxonomy claims
 
 ---
 
@@ -254,4 +350,6 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 | [Sandbox app spec](docs/ops-sentinel-sandbox-app-spec.md) | The system under observation |
 | [Architecture](docs/architecture.md) | Components, data flow, state, trust boundaries |
 | [Sprints](docs/sprints.md) | Semester delivery plan |
+| [ADR-0008](docs/adr/0008-decision-point-extraction.md) | The extraction layer — why, and the six constraints that keep it from becoming a second gate |
+| [ADR-0009](docs/adr/0009-extraction-evaluation-harness.md) | How the miss rate is measured, and what is still open about it |
 | [ADRs](docs/adr/) | Why each significant choice was made |
