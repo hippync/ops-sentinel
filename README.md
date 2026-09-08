@@ -276,6 +276,50 @@ See [ADR-0008](docs/adr/0008-decision-point-extraction.md).
 
 ---
 
+## Framework alignment
+
+Where this work sits relative to three frameworks. Nothing here is audited and nothing below
+claims compliance.
+
+**NIST AI RMF** — the anchor. Voluntary, free, four functions: Govern, Map, Measure, Manage. Two
+describe this repo.
+
+*Govern* covers the Validator, the risk register, and the IAM scoping — eight risk rows, each with
+a detection signal and a hard rule enforced outside the LLM.
+[ADR-0003](docs/adr/0003-no-llm-in-validator.md)'s "no LLM in the safety gate" is the governance
+commitment; the CI drift check on the Executor's policy stops it decaying into an intention.
+
+*Measure* covers the evaluation harness: it asks for documented test results on what you claim
+about a system, and [ADR-0009](docs/adr/0009-extraction-evaluation-harness.md)'s miss rate —
+recall against decisions labeled before any extraction rule was written, reproducible in CI
+without an AWS account — is that shape. Map and Manage are thin: scope is fixed by the sandbox, and
+post-deployment monitoring doesn't exist yet.
+
+**OSFI Guideline E-23** (model risk management, in force 1 May 2027) — the institutional context.
+E-23 governs a model lifecycle whose stages — rationale, development, review, approval — assume a
+decision that can be attributed and documented. An autonomous multi-step agent doesn't produce
+one. It produces a trajectory, and the approval record captures who clicked yes, not what was
+decided or on what basis. That is the gap
+[ADR-0008](docs/adr/0008-decision-point-extraction.md) describes, reached independently. The
+decision register ([ADR-0006](docs/adr/0006-audit-log-store.md)) is this project's answer: every
+decision point an addressable item, not a line in a narrative.
+
+**AIUC-1** — the agent-specific layer; Accountability and Reliability are the relevant pillars. It
+positions itself as operationalizing ISO 42001, NIST AI RMF, MITRE ATLAS, the EU AI Act and the
+OWASP Top Ten rather than replacing them, so it complements the NIST anchor instead of duplicating
+it. It also requires recurring technical testing rather than one annual review, which converges
+with the seeded-scenario harness: a fixture corpus re-run in CI is the shape that requirement asks
+for.
+
+**Limits.** Each framework asks for more than this repo does. AI RMF's Map and Manage expect
+impact analysis and production monitoring; neither exists here. E-23 expects independent review by
+someone who did not build the model; this project has one author. AIUC-1 certification
+requires an accredited third-party audit and adversarial testing against a live agent; nothing
+here has been tested by anyone but its author. And the mapping above is the author's own reading,
+not an assessment — nobody has checked it.
+
+---
+
 ## The sandbox app
 
 Deliberately small — a handful of Orders endpoints. It exists to generate real, controllable
