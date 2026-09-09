@@ -1,0 +1,14 @@
+# The hooks live outside agents/, so `cd agents && ruff check .` cannot reach them.
+# These settings mirror agents/pyproject.toml so the harness is held to the same standard
+# as the code it checks — with one difference: py39, because the hook runs under whatever
+# python3 is ambient, not the project's 3.12 venv.
+
+line-length = 100
+target-version = "py39"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[lint.per-file-ignores]
+# S101: bare asserts are how pytest works. Same carve-out agents/pyproject.toml makes.
+"test_*.py" = ["S101"]

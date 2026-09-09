@@ -36,5 +36,10 @@ credentials
 .vscode/
 *.swp
 
+# Claude Code: the shared harness is committed (see docs/agentic-workflow.md); personal
+# overrides and session state are not.
+.claude/settings.local.json
+.claude/state/
+
 # Maven wrapper: the jar is downloaded by mvnw itself (wrapperUrl in the properties)
 .mvn/wrapper/maven-wrapper.jar
