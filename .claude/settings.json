@@ -20,6 +20,12 @@
     ],
     "deny": [
       "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push origin main*)",
+      "Bash(git push origin HEAD:main*)",
+      "Bash(git push origin +main*)",
+      "Bash(git branch -D main*)",
+      "Bash(git push origin --delete main*)",
       "Bash(rm -rf *)"
     ]
   },
