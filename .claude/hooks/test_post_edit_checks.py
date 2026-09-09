@@ -18,6 +18,7 @@ from post_edit_checks import (
     Failure,
     classify,
     format_failures,
+    frontmatter_problems,
     read_payload,
     relative_path,
 )
@@ -150,6 +151,73 @@ def test_malformed_payloads_yield_no_path_and_never_raise(payload: str) -> None:
 # ----------------------------------------------------------------------------------
 # format_failures
 # ----------------------------------------------------------------------------------
+
+
+def test_claude_markdown_files_get_a_frontmatter_check() -> None:
+    checks = classify(".claude/agents/adversarial-reviewer.md")
+    assert checks.frontmatter
+    assert not checks.python
+
+
+# ----------------------------------------------------------------------------------
+# frontmatter_problems — the regression guard for the bug GitHub caught
+# ----------------------------------------------------------------------------------
+
+
+def test_the_bug_that_actually_shipped_is_caught() -> None:
+    """Verbatim shape of the line GitHub rejected: an unquoted description with ': '."""
+    text = (
+        "---\n"
+        "name: adversarial-reviewer\n"
+        "description: Use before committing anything containing prose: README edits, ADRs.\n"
+        "tools: Read, Grep\n"
+        "---\n\nBody.\n"
+    )
+    problems = frontmatter_problems(text)
+    assert len(problems) == 1
+    assert problems[0].startswith("description:")
+
+
+def test_quoting_the_value_fixes_it() -> None:
+    text = (
+        "---\n"
+        'description: "Use before committing anything containing prose: README edits."\n'
+        "---\n"
+    )
+    assert frontmatter_problems(text) == []
+
+
+def test_single_quotes_also_count_as_quoted() -> None:
+    text = "---\ndescription: 'a: b'\n---\n"
+    assert frontmatter_problems(text) == []
+
+
+def test_the_repos_real_frontmatter_is_clean() -> None:
+    """Guards every committed agent and command definition, not just a synthetic case."""
+    hooks_dir = Path(__file__).resolve().parent
+    for path in sorted((hooks_dir.parent).rglob("*.md")):
+        assert frontmatter_problems(path.read_text(encoding="utf-8")) == [], path
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "No frontmatter here, just prose: with a colon.\n",
+        "---\ndescription: a plain value\n---\n",
+        "---\ntools: Read, Grep, Glob\n---\n",  # commas are fine, only ': ' breaks
+        "---\nargument-hint: <risk row number>\n---\n",
+        "---\ndescription: ends with a colon:\n---\n",  # no trailing space, still valid YAML
+    ],
+)
+def test_valid_frontmatter_reports_nothing(text: str) -> None:
+    assert frontmatter_problems(text) == []
+
+
+def test_body_prose_after_the_closing_marker_is_not_scanned() -> None:
+    """The check stops at the closing ---; body text routinely contains 'word: thing'."""
+    text = "---\nname: x\n---\n\nUse this before: README edits, ADRs, and docstrings.\n"
+    assert frontmatter_problems(text) == []
 
 
 def test_every_failure_is_reported_with_its_label() -> None:

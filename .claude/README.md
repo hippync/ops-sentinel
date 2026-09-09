@@ -7,8 +7,8 @@ what is delegated, what is refused, and why — is in
 | Path | What it does |
 |---|---|
 | [`settings.json`](settings.json) | Allowlist for read-only and test commands; registers the edit hook |
-| [`hooks/post_edit_checks.py`](hooks/post_edit_checks.py) | ruff + mypy + pytest on `agents/**/*.py` edits; the risk row 6 IAM drift check on `ActionType` and policy edits |
-| [`hooks/test_post_edit_checks.py`](hooks/test_post_edit_checks.py) | The hook's own tests — 29 cases over its path-classification and payload parsing |
+| [`hooks/post_edit_checks.py`](hooks/post_edit_checks.py) | ruff + mypy + pytest on `agents/**/*.py` edits; the risk row 6 IAM drift check on `ActionType` and policy edits; YAML frontmatter validity on the definitions in this directory |
+| [`hooks/test_post_edit_checks.py`](hooks/test_post_edit_checks.py) | The hook's own tests — 41 cases over path classification, payload parsing, and frontmatter validity |
 | [`hooks/ruff.toml`](hooks/ruff.toml) | Mirrors `agents/pyproject.toml`, because `cd agents && ruff check .` cannot reach this directory |
 | [`agents/adversarial-reviewer.md`](agents/adversarial-reviewer.md) | Re-runs the stance of [the Sprint 0 review](../docs/review-2026-09-07.md) against a diff. Read-only |
 | [`agents/risk-row-auditor.md`](agents/risk-row-auditor.md) | Checks that register row → module → test is still 1:1. Read-only |

@@ -1,6 +1,6 @@
 ---
 name: adversarial-reviewer
-description: Reviews an uncommitted diff (or a named file) the way docs/review-2026-09-07.md reviewed this repo — adversarially, from the stance of a senior engineer seeing it public for the first time. Use before committing anything containing prose: README edits, ADRs, module docstrings, risk register changes. Read-only.
+description: "Reviews an uncommitted diff (or a named file) the way docs/review-2026-09-07.md reviewed this repo — adversarially, from the stance of a senior engineer seeing it public for the first time. Use before committing anything containing prose: README edits, ADRs, module docstrings, risk register changes. Read-only."
 tools: Read, Grep, Glob, Bash
 ---
 

@@ -51,6 +51,7 @@ MISSING_VENV = (
 IAM_TRIGGER_FILES = frozenset({"agents/src/ops_sentinel/schemas/models.py"})
 IAM_TRIGGER_DIR = "infra/policies/"
 HOOK_DIR = ".claude/hooks/"
+CLAUDE_DIR = ".claude/"
 
 
 class Checks(NamedTuple):
@@ -59,9 +60,10 @@ class Checks(NamedTuple):
     python: bool
     iam: bool
     hook_self_test: bool
+    frontmatter: bool
 
     def any_requested(self) -> bool:
-        return self.python or self.iam or self.hook_self_test
+        return self.python or self.iam or self.hook_self_test or self.frontmatter
 
 
 class Failure(NamedTuple):
@@ -81,7 +83,46 @@ def classify(rel: str) -> Checks:
         rel.startswith(IAM_TRIGGER_DIR) and rel.endswith(".json")
     )
     hook_self_test = rel.startswith(HOOK_DIR) and rel.endswith(".py")
-    return Checks(python=python, iam=iam, hook_self_test=hook_self_test)
+    frontmatter = rel.startswith(CLAUDE_DIR) and rel.endswith(".md")
+    return Checks(
+        python=python, iam=iam, hook_self_test=hook_self_test, frontmatter=frontmatter
+    )
+
+
+def frontmatter_problems(text: str) -> list[str]:
+    """Catch the one YAML frontmatter mistake this repo has actually made.
+
+    An unquoted scalar containing ": " is read by YAML as a nested mapping, so
+    `description: Use this before prose: README edits` fails with "mapping values are not
+    allowed in this context" — which is how GitHub refused to render an agent definition.
+    The subagent's description is what tells Claude when to use it, so a break here is
+    silent in exactly the way this hook exists to prevent.
+
+    Deliberately NOT a YAML parser: it checks one known failure, and says so, rather than
+    reimplementing YAML badly and implying broader coverage than it has.
+    """
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return []
+
+    problems = []
+    for raw in lines[1:]:
+        if raw.strip() == "---":
+            break
+        key, sep, value = raw.partition(":")
+        # Only top-level `key: value` lines; nested and continuation lines are out of scope.
+        if not sep or not key.strip() or raw[:1] in (" ", "\t", "-"):
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'"
+        if not quoted and ": " in value:
+            problems.append(
+                f"{key.strip()}: unquoted value contains ': ', which YAML reads as a "
+                f"nested mapping. Wrap the value in double quotes."
+            )
+    return problems
 
 
 def relative_path(file: str, repo_root: Path) -> str | None:
@@ -146,6 +187,19 @@ def main() -> int:
     checks = classify(rel)
     if not checks.any_requested():
         return 0
+
+    # Runs before the venv gate: it needs no tooling, and a broken agent definition
+    # should still be reported on a machine that has not been set up yet.
+    if checks.frontmatter:
+        try:
+            problems = frontmatter_problems((repo_root / rel).read_text(encoding="utf-8"))
+        except OSError as exc:
+            problems = [str(exc)]
+        if problems:
+            sys.stderr.write(format_failures([Failure(f"frontmatter {rel}", "\n".join(problems))]))
+            return 2
+        if not checks.python and not checks.iam and not checks.hook_self_test:
+            return 0
 
     if not (venv / "bin" / "python").exists():
         # Say so out loud rather than passing silently. A check that quietly does nothing
