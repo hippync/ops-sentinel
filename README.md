@@ -136,6 +136,8 @@ ops-sentinel/
 │   └── policies/        the Executor's minimum-privilege IAM policy (reviewed, not generated)
 ├── docs/                business case, risk register, architecture, sprints, ADRs
 ├── scripts/             local dev + demo drivers, and the IAM drift check CI runs
+├── .claude/             the AI-assisted build harness — checks, review agents, commands
+├── CLAUDE.md            standing context for that harness: status, conventions, hard rules
 └── .github/workflows/   CI
 ```
 
@@ -394,6 +396,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 | [Sandbox app spec](docs/ops-sentinel-sandbox-app-spec.md) | The system under observation |
 | [Architecture](docs/architecture.md) | Components, data flow, state, trust boundaries |
 | [Sprints](docs/sprints.md) | Semester delivery plan |
+| [Agentic workflow](docs/agentic-workflow.md) | How this repo is built with AI assistance — and the two places that assistance is refused |
 | [ADR-0008](docs/adr/0008-decision-point-extraction.md) | The extraction layer — why, and the six constraints that keep it from becoming a second gate |
 | [ADR-0009](docs/adr/0009-extraction-evaluation-harness.md) | How the miss rate is measured, and what is still open about it |
 | [ADRs](docs/adr/) | Why each significant choice was made |
