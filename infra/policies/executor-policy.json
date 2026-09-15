@@ -4,10 +4,21 @@
     {
       "Sid": "UpdateOnlyTheOrdersService",
       "Effect": "Allow",
-      "Action": [
-        "ecs:UpdateService",
-        "ecs:DescribeServices"
-      ],
+      "Action": "ecs:UpdateService",
+      "Resource": "arn:aws:ecs:REGION:ACCOUNT:service/ops-sentinel-sandbox/orders-api",
+      "Condition": {
+        "ArnLikeIfExists": {
+          "ecs:task-definition": "arn:aws:ecs:REGION:ACCOUNT:task-definition/orders-api:*"
+        },
+        "StringEqualsIfExists": {
+          "ecs:enable-execute-command": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeTheOrdersService",
+      "Effect": "Allow",
+      "Action": "ecs:DescribeServices",
       "Resource": "arn:aws:ecs:REGION:ACCOUNT:service/ops-sentinel-sandbox/orders-api"
     },
     {
