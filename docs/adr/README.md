@@ -9,6 +9,10 @@ Open questions live in GitHub issues labelled `decision`, and become ADRs on res
 
 Format: `NNNN-short-title.md`. Status is `Proposed`, `Accepted`, or `Superseded by NNNN`.
 
+`Revised: <date>` on an accepted ADR marks a **factual correction** to its context or
+consequences, explained in a dated Revision section that quotes what was wrong. A new or
+changed *decision* never goes in as a revision — it gets its own ADR, starting as Proposed.
+
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-monorepo.md) | Monorepo over split repos | Accepted |
@@ -20,6 +24,7 @@ Format: `NNNN-short-title.md`. Status is `Proposed`, `Accepted`, or `Superseded 
 | [0007](0007-row-4-cannot-live-in-iam.md) | Row 4's ceiling cannot be enforced in IAM | Accepted |
 | [0008](0008-decision-point-extraction.md) | Decision-point extraction before the approval gate | Accepted |
 | [0009](0009-extraction-evaluation-harness.md) | Evaluation harness for extraction | Accepted |
+| [0010](0010-pin-updateservice-condition-keys.md) | Pin the `UpdateService` condition keys that exist | **Proposed** |
 
 0005 and 0006 spent time as GitHub issues rather than as ADRs whose Decision section said
 "not yet made". They were written here when they were actually decided, which is the point

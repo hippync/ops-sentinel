@@ -29,6 +29,9 @@ jobs:
           filters: |
             agents:
               - 'agents/**'
+              # tests/unit/test_check_iam_scope.py exercises the drift check and the policy
+              - 'scripts/check_iam_scope.py'
+              - 'infra/policies/**'
               - '.github/workflows/ci.yml'
             sandbox:
               - 'sandbox-app/**'
@@ -36,6 +39,7 @@ jobs:
             infra:
               - 'infra/**'
               - 'agents/src/ops_sentinel/schemas/models.py'
+              - 'scripts/check_iam_scope.py'
               - '.github/workflows/ci.yml'
 
   agents:

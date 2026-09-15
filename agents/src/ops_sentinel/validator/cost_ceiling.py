@@ -6,10 +6,14 @@ action with no upper bound, or one above the ceiling, is rejected.
 This row is the documented EXCEPTION to "IAM is the last line of defense": AWS exposes
 no IAM condition key constraining `desiredCount` on `ecs:UpdateService`, so this ceiling
 cannot be enforced in the Executor's role. See
-docs/adr/0007-row-4-cannot-live-in-iam.md. It is therefore enforced three times instead:
-here, in ECS Service Auto Scaling max capacity, and in the Executor's own re-check.
+docs/adr/0007-row-4-cannot-live-in-iam.md. It is therefore designed to be checked twice
+in code instead: here, and in the Executor's own re-check. ECS Service Auto Scaling max
+capacity is a lagging correction, not a third block — it does not stop `UpdateService`
+setting a higher count, and pulls it back down only when a scale-in alarm fires.
 
-Residual risk: a legitimate spike that genuinely needs more than the ceiling allows.
+Residual risk: a legitimate spike that genuinely needs more than the ceiling allows. And
+because IAM cannot bound the count, if both code checks fail, spend is bounded only by
+account-level limits and how quickly someone notices.
 """
 
 from __future__ import annotations
