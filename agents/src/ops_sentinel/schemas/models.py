@@ -75,9 +75,10 @@ class RestartServiceParams(BaseModel):
 class SetDesiredCountParams(BaseModel):
     action_type: Literal[ActionType.SET_DESIRED_COUNT] = ActionType.SET_DESIRED_COUNT
     desired_count: int = Field(ge=0)
-    """Bounded by config.MAX_DESIRED_COUNT in the Validator, by Service Auto Scaling max
-    capacity in the infrastructure, and re-checked in the Executor. It cannot be bounded
-    in IAM."""
+    """Bounded by config.MAX_DESIRED_COUNT, designed to be checked in the Validator and
+    re-checked in the Executor; neither check is built yet. It cannot be bounded in IAM,
+    and Service Auto Scaling max capacity only corrects an over-ceiling count after the
+    fact — see docs/adr/0007-row-4-cannot-live-in-iam.md."""
 
 
 ActionParams = Annotated[

@@ -47,17 +47,27 @@ fails CI if it drifts from the `ActionType` enum in either direction.
 
 Both were found by review and are stated here rather than left for a reader to discover:
 
-1. **`ecs:UpdateService` is one IAM action covering all three `ActionType`s**, plus the
-   ability to point the service at any task-definition revision in the account. IAM
+1. **`ecs:UpdateService` is one IAM action covering all three `ActionType`s.** IAM
    cannot tell a rollback from a restart from a scale. Row 6's guarantee is real but
-   coarser than "one IAM action per action type."
+   coarser than "one IAM action per action type." The policy does limit where a rollback
+   can point: an `ecs:task-definition` condition keeps the service on the `orders-api`
+   family. Any revision inside that family, including a known-bad one, stays reachable.
 2. **Risk row 4's ceiling cannot be enforced in IAM at all** — AWS exposes no condition
-   key for `desiredCount` on `UpdateService`. It is enforced in the Validator, in ECS
-   Service Auto Scaling max capacity, and in the Executor's re-check instead. See
-   [ADR-0007](../docs/adr/0007-row-4-cannot-live-in-iam.md).
+   key for `desiredCount` on `UpdateService`. It is designed to be checked in the
+   Validator and in the Executor's re-check instead. ECS Service Auto Scaling max capacity
+   does **not** block the call; it only pulls an over-ceiling count back down when a
+   scale-in alarm fires. See [ADR-0007](../docs/adr/0007-row-4-cannot-live-in-iam.md).
 
 `application-autoscaling:*` is deliberately **not** granted to the Executor, so the agent
-cannot raise its own ceiling.
+cannot move the bounds it is corrected back to.
+
+The two IAM conditions are proposed in
+[ADR-0010](../docs/adr/0010-pin-updateservice-condition-keys.md), which also says why the
+other `UpdateService` condition keys are not pinned yet. Both use `IfExists`, so restart and
+scale calls pass without naming a task definition. That behaviour comes from the AWS docs
+and has not been observed; Sprint 5 confirms it with real denied calls. The
+`ecs:enable-execute-command` pin also conflicts with reaching the chaos endpoints through
+ECS Exec, if that turns out to be the access path — Sprint 5 settles it first.
 
 ---
 

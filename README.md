@@ -104,9 +104,11 @@ standing between the LLM and your infrastructure.
 **With two caveats this project states rather than glosses.** `ecs:UpdateService` is a single IAM
 action covering all three action types, so IAM cannot tell a rollback from a restart from a scale —
 the guarantee is real but coarser than one-action-per-action-type. And AWS exposes no IAM condition
-key for `desiredCount`, so the **cost ceiling (row 4) cannot live in IAM at all**; it is enforced in
-the Validator, in ECS Service Auto Scaling max capacity, and in the Executor's re-check instead.
-[ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md) has the verification and the sources. A
+key for `desiredCount`, so the **cost ceiling (row 4) cannot live in IAM at all**; it is designed to
+be checked in the Validator and in the Executor's re-check instead, and ECS Service Auto Scaling max
+capacity only corrects an over-ceiling count after the fact — it does not block the call.
+[ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md) has the verification and the sources, and the
+[pre-mortem answer](docs/ops-sentinel-risk-register.md) works through what that leaves unbounded. A
 reviewer who finds a gap like this unaided discounts everything else in the register.
 
 ---
@@ -179,7 +181,7 @@ All are deterministic and enforced outside the LLM's control.
 | 1 | Action must target a **single named resource ID** | Wildcards/tag patterns never fast-path — always strict approval |
 | 2 | No **credentials or PII** in the proposal | The gate **rejects**; redaction happens at rendering. Scrubbing would change the proposal's hash and break the Executor's verification chain |
 | 3 | Worker **iteration cap** | Fail loudly and page a human; never continue silently |
-| 4 | **Cost ceiling** — max instance count | Reject scale actions with no upper bound. Cannot be enforced in IAM ([ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md)) — so enforced three times: Validator, ECS autoscaling max capacity, Executor re-check |
+| 4 | **Cost ceiling** — max instance count | Reject scale actions with no upper bound. Cannot be enforced in IAM ([ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md)) — so designed to be checked twice in code, Validator and Executor re-check; ECS autoscaling max capacity only corrects after the fact |
 | 5 | Action must be **derivable from structured incident data** | Target must be in `affected_resource_ids`; action type must be in the playbook for the incident type. Tested with a crafted injection case |
 | 6 | Executor IAM scoped to its **known action set** | Enforced at deploy time, independent of the Validator; drift from the enum fails CI |
 | 7 | **Rollback plan required** | Reject any proposal without a defined rollback step |

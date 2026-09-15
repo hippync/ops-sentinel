@@ -32,9 +32,12 @@ its own; a Worker with nothing checking it is not.
       exists for `desiredCount` on `ecs:UpdateService`
 - [x] Executor minimum-privilege IAM policy + `scripts/check_iam_scope.py` drift check in CI
 - [x] CI: path-filtered pytest/ruff/mypy, Maven verify, IAM drift check
-- [ ] **Answer the pre-mortem question** from the risk register: if every check failed at
+- [x] **Answer the pre-mortem question** from the risk register: if every check failed at
       once, is the worst outcome bounded by IAM scoping alone? ADR-0007 changed the inputs
-      to this question — row 4 is now *not* IAM-bounded, so answer it again with that known
+      to this question — row 4 is now *not* IAM-bounded, so answer it again with that known.
+      [Answered **no**](ops-sentinel-risk-register.md): spend and one service's availability
+      are not IAM-bounded. The Executor policy gained two conditions in response, ADR-0007
+      was corrected, and the spend bound is an open choice carried into Sprint 5
 
 **Done when:** the pre-mortem has a documented answer under ADR-0007's revised assumptions.
 
@@ -57,7 +60,9 @@ The differentiator, plus the thing that makes every later sprint independent of 
       [ADR-0005](adr/0005-approval-surface.md): Slack, which resolves that half of ADR-0002's
       conditionality in its favour
 - [ ] **Decide [ADR-0004 runtime](adr/0004-pipeline-runtime.md)** — now the *only* remaining
-      blocker on ADR-0002; orchestration code should not be written before it lands
+      blocker on ADR-0002; orchestration code should not be written before it lands. Whatever
+      it picks must keep the Executor's credentials out of the pipeline's process — the
+      pre-mortem answer assumes it
 - [ ] Document the false-positive tolerance (risk row 8) — decided now, not justified later
 - [ ] **~20 evaluation scenarios** as recorded alarm payloads, each with its one critical
       decision **labeled in a commit that precedes any extraction rule** ([ADR-0009](adr/0009-extraction-evaluation-harness.md)).
@@ -104,6 +109,9 @@ emits a recorded span set for each evaluation scenario.
 - [ ] `ApprovalRecord`: who, when, which proposal hash
 - [ ] Executor with a **fake AWS backend** — dispatch table, no LLM
 - [ ] Executor re-verifies the approval record; a mismatch is a logged **security event**
+- [ ] Executor re-checks `MAX_DESIRED_COUNT` before the call, with a test — for risk row 4 this
+      and the Validator are the only automated controls that act before the call
+      ([ADR-0007](adr/0007-row-4-cannot-live-in-iam.md))
 - [ ] Decision register per [ADR-0006](adr/0006-audit-log-store.md), covering the full run and
       written through `audit/redaction.py` — local JSON-lines sink here, DynamoDB in Sprint 5
 - [ ] **Demo-able milestone: the Validator blocks an unsafe fix, end to end, on a laptop**
@@ -147,15 +155,32 @@ Something real to break.
 
 - [ ] Terraform: VPC, ECS Fargate, RDS, ALB (public listener = Orders only)
 - [ ] **Fargate tasks in public subnets with tight security groups — no NAT gateway** (~$32/mo)
-- [ ] ECS Service Auto Scaling **max capacity** — row 4's infrastructure enforcement point
-- [ ] Internal listener for chaos via SSM port-forward, not the public route
+- [ ] ECS Service Auto Scaling **max capacity** — row 4's infrastructure backstop, and only a
+      lagging one: it does not block `UpdateService` setting a higher count, and corrects it
+      only when a scale-in alarm fires ([ADR-0007](adr/0007-row-4-cannot-live-in-iam.md), revised)
+- [ ] **Bound spend outside this repo's code** — the pre-mortem's open choice, and the author's
+      call: a Fargate vCPU quota (a block, if a quota can be lowered — unverified), an AWS
+      Budgets action attaching a deny policy to the Executor role (a lagging correction), or a
+      separate actuator role (a block, but code). Must land before the Executor role is applied
+- [ ] Internal listener for chaos via SSM port-forward, not the public route. **Settle the
+      access path first:** if it needs ECS Exec, the service needs `enableExecuteCommand=true`,
+      which the Executor policy's pin forbids ([ADR-0010](adr/0010-pin-updateservice-condition-keys.md))
 - [ ] CloudWatch alarms (5xx rate, memory) → EventBridge → pipeline
 - [ ] DynamoDB decision register table ([ADR-0006](adr/0006-audit-log-store.md)) — PITR on, no
       TTL, conditional writes, and **outside the `terraform destroy` cycle**: the demo's trail
       is the artifact and must survive teardown
-- [ ] Apply the Executor IAM role from the reviewed policy; nothing broader. `dynamodb:PutItem`
-      goes to the **pipeline's** task role — adding it to the Executor policy would fail
-      `check_iam_scope.py`, correctly
+- [ ] **Account hygiene the pre-mortem relies on:** task definitions reference secrets through
+      Secrets Manager or SSM, never plain `environment` (the Executor can read every task
+      definition); no permissive security group exists to attach (IAM has no key to stop it)
+- [ ] Pin the remaining `UpdateService` condition keys once Terraform gives them values —
+      subnets, capacity provider, task size, and Service Connect / VPC Lattice / EBS off
+      ([ADR-0010](adr/0010-pin-updateservice-condition-keys.md))
+- [ ] Apply the Executor IAM role from the reviewed policy, **only after the spend bound above is
+      in place**; nothing broader. `dynamodb:PutItem` goes to the **pipeline's** task role —
+      adding it to the Executor policy would fail `check_iam_scope.py`, correctly
+- [ ] **Confirm the IAM pins with real calls:** a rollback outside the `orders-api` family and
+      `enableExecuteCommand: true` must be denied; restart, scale, and an in-family rollback
+      must pass. The `IfExists` behaviour is read from docs, not yet observed
 - [ ] Chaos #1: deploy a deliberately broken task-definition revision, confirm the alarm fires
 - [ ] Swap the fake executor for boto3; re-run the Sprint 3 demo against real infrastructure
 - [ ] `terraform destroy` in the demo runbook

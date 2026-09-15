@@ -23,8 +23,11 @@ These are constraints, not aspirations. Each one is testable, and CI should fail
    check fails (risk row 6). Two limits, stated rather than glossed: `ecs:UpdateService` is one IAM
    action covering all three action types, so IAM cannot distinguish them; and **risk row 4's cost
    ceiling cannot be enforced in IAM at all**, because AWS exposes no condition key for
-   `desiredCount`. See [ADR-0007](adr/0007-row-4-cannot-live-in-iam.md). Row 4 is enforced three
-   times instead — Validator, ECS Service Auto Scaling max capacity, and the Executor's re-check.
+   `desiredCount`. See [ADR-0007](adr/0007-row-4-cannot-live-in-iam.md). Row 4 is instead designed
+   to be checked twice in code — Validator and the Executor's re-check — and ECS Service Auto Scaling max
+   capacity only pulls an over-ceiling count back down when a scale-in alarm fires; it does not
+   block the call. The [pre-mortem answer](ops-sentinel-risk-register.md) lists what IAM leaves
+   unbounded.
 4. **Nothing executes without a human.** No auto-execution path exists in v1, not even a disabled
    one behind a flag. The flag is the risk.
 5. **Every decision is auditable.** Inputs, reasoning, verdict, and rule outcomes are logged as
