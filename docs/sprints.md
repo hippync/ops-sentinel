@@ -48,7 +48,7 @@ its own; a Worker with nothing checking it is not.
 The differentiator, plus the thing that makes every later sprint independent of AWS.
 
 - [x] `rollback.py` + tests — risk row 7
-- [ ] `blast_radius.py` + tests — risk row 1 (runs over the rollback action too)
+- [x] `blast_radius.py` + tests — risk row 1 (runs over the rollback action too)
 - [ ] `secrets.py` + tests — risk row 2 (rejects; redaction lives in `audit/redaction.py`)
 - [ ] `cost_ceiling.py` + tests — risk row 4
 - [ ] `injection.py` + tests — risk row 5, including the playbook constraint
