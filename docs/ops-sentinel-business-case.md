@@ -26,7 +26,7 @@ Most auto-remediation features are black boxes: a rules engine or an LLM suggest
 
 | Risk | Hard rule | Developer gap it closes |
 |---|---|---|
-| Blast radius too broad | Validator requires a single named resource ID; wildcards always route to strict approval | No consistent second check exists today beyond a tired on-call engineer |
+| Blast radius too broad | Validator rejects any action not scoped to a single named resource ID, the rollback action included; a `RuleOutcome` has no approval-path channel, so rejection is the only disposition this rule can express | No consistent second check exists today beyond a tired on-call engineer |
 | Secrets/PII in a proposal | Validator scrubs/rejects proposals matching credential or PII patterns | No automated gate exists before a human reads raw log content |
 | Runaway LLM cost | Hard iteration cap; fail loudly on breach | Nothing currently stops an agent run from silently spinning |
 | Runaway infra cost | Fixed max-instance/spend-delta ceiling, enforced outside the LLM | Manual fixes are bounded by judgment in the moment; automation needs that made explicit |
