@@ -7,10 +7,10 @@ between "an AI proposed something" and "something executes."
 > ### Build status — Sprint 1 of 6
 >
 > **Working today:** typed stage contracts, an unforgeable content-derived `proposal_hash`,
-> the `rollback` Validator rule (risk row 7) with tests, and a CI check that fails if the
-> Executor's IAM policy drifts from its action set.
+> the `rollback` (risk row 7) and `blast_radius` (risk row 1) Validator rules with tests,
+> and a CI check that fails if the Executor's IAM policy drifts from its action set.
 >
-> **Not built yet:** the remaining five Validator rules, Triage, Worker, Executor, the
+> **Not built yet:** the remaining four Validator rules, Triage, Worker, Executor, the
 > decision-point extraction layer, the sandbox app's endpoints, and all AWS infrastructure.
 > Sections below describe the design those will implement — read them as specification, not
 > as a description of running code. **No miss rate has been measured yet**; every number in
@@ -367,7 +367,7 @@ part of the story, not an afterthought.
 These run today, on a clean checkout:
 
 ```bash
-# Agents — 17 tests, ruff, and mypy --strict all pass
+# Agents — 38 tests, ruff, and mypy --strict all pass
 cd agents
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
