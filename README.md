@@ -178,7 +178,7 @@ All are deterministic and enforced outside the LLM's control.
 
 | # | Rule | Behavior on breach |
 |---|---|---|
-| 1 | Action must target a **single named resource ID** | Wildcards/tag patterns never fast-path — always strict approval |
+| 1 | Action must target a **single named resource ID** | The gate **rejects** a blank, wildcard, tag-selector or multi-resource target. Runs over the rollback action too — an unchecked rollback is an unchecked path to the same Executor |
 | 2 | No **credentials or PII** in the proposal | The gate **rejects**; redaction happens at rendering. Scrubbing would change the proposal's hash and break the Executor's verification chain |
 | 3 | Worker **iteration cap** | Fail loudly and page a human; never continue silently |
 | 4 | **Cost ceiling** — max instance count | Reject scale actions with no upper bound. Cannot be enforced in IAM ([ADR-0007](docs/adr/0007-row-4-cannot-live-in-iam.md)) — so designed to be checked twice in code, Validator and Executor re-check; ECS autoscaling max capacity only corrects after the fact |

@@ -26,7 +26,10 @@ Write them first, watch them fail, then implement. Cover:
 
 - the clean case passes (use the `clean_proposal` fixture from `agents/tests/conftest.py`, mutated
   away from — do not build proposals inline)
-- each violation the row names is rejected, with a `detail` that names the offending value
+- each violation the row names is rejected, with a `detail` that names the offending value —
+  assert **both** `not outcome.passed` and the `detail` substring, never `detail` alone. A rule's
+  pass-path detail can quote the very value its fail path does (`blast_radius` quotes the target
+  on both paths), and then a detail-only assertion is satisfied by the pass path and proves nothing
 - the rule returns a `RuleOutcome` rather than raising, even on degenerate input — a crashing
   validator fails open, so this test is not optional
 - if the rule runs over the rollback action as well as the primary one, both are covered and
@@ -34,6 +37,20 @@ Write them first, watch them fail, then implement. Cover:
 
 For each test, be able to say what change to the source would make it fail. If the answer is
 "nothing", the test is decoration — rewrite it.
+
+Then prove that rather than asserting it. Once the suite is green, disable each guard in the
+source in turn (`if False:` in place of its condition) and confirm at least one test fails for
+it; restore the source afterwards. A guard whose removal breaks nothing is untested.
+
+Do not expect the failures to line up one-to-one with the guard, and do not "fix" a test that
+fails for a neighbouring one: a `never_raises` test depends on *some* guard rejecting, so it
+fails alongside whichever one you switched off, and that is the test working rather than a
+broken test. Expect the post-edit hook to go red on each mutation for the same reason — that
+is the suite doing its job, not a mistake to revert.
+
+This is the executable form of the paragraph above, and it is not optional: it has already
+caught a row 1 test that passed through the pass path while the guard it was meant to cover
+was switched off.
 
 ## Then implement
 
