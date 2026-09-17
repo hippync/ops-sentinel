@@ -85,7 +85,10 @@ No AWS. No Java. Recorded payloads and read-only tool stubs only.
 - [ ] Triage: alarm → `Incident`; `unknown` routes straight to a human
 - [ ] Worker read-only tool interfaces + recorded-response fakes
 - [ ] Worker → `FixProposal` with required rollback and evidence references
-- [ ] **Iteration cap enforced in the graph runtime**, not the prompt (risk row 3)
+- [ ] **Iteration, token and wall-clock caps enforced in the graph runtime**, not the prompt
+      (risk row 3). Iteration count is a proxy for spend, not spend: one iteration with a large
+      context satisfies the cap and still exhausts the budget, so the token cap measures the
+      quantity the row actually cares about
 - [ ] **Integration test asserting graph topology**: no path from `worker` to `executor`
       bypasses `validator` and `approval`. This is the single most load-bearing claim in
       the architecture and nothing currently enforces it
@@ -95,6 +98,9 @@ No AWS. No Java. Recorded payloads and read-only tool stubs only.
       whether or not the extraction layer survives its kill criterion
 - [ ] Record the ~20 scenarios' span sets to fixture files — ADR-0009 measures extraction over
       fixed spans so the published number carries no trajectory variance
+- [ ] Pick the numbers rows 9–13 leave open — the approval window, the post-execution observation
+      window, the dedupe window, and the per-run and aggregate token and wall-clock budgets —
+      before any of those rows is enforced, in the same discipline risk row 8 and ADR-0009 use
 
 **Done when:** a replayed alarm produces a validated-or-rejected proposal end to end, and
 emits a recorded span set for each evaluation scenario.

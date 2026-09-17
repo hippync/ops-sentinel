@@ -15,13 +15,23 @@ says it does — the drift you are looking for *is* the doc saying so.
 For each numbered row in `docs/ops-sentinel-risk-register.md`, establish:
 
 - Which module implements it (`agents/src/ops_sentinel/validator/*.py`, plus `audit/redaction.py`
-  and the graph runtime for row 3). The module names its row in a `RISK_ROW` constant.
+  and the graph runtime for row 3; for rows 9–12 look instead at `executor/`, `triage/`, and the
+  verification stage named in the register's sub-table, not at `validator/`). The module names its
+  row in a `RISK_ROW` constant.
 - Whether that module is implemented or still `raise NotImplementedError`.
 - Whether a test file exists for it, and whether the tests cover the row's stated failure mode —
   not merely that the module imports.
 
-Rows 1, 2, 4, 5, 7 are Validator rules; row 3 is the graph's iteration cap; row 6 is the IAM
-policy plus `scripts/check_iam_scope.py`; row 8 is `scoring.py` and the documented tolerance.
+Rows 1, 2, 4, 5, 7 are Validator rules; row 3 is the graph's iteration, token and wall-clock
+caps; row 6 is the IAM policy plus `scripts/check_iam_scope.py`; row 8 is `scoring.py` and the
+documented tolerance.
+
+**Rows 9–13 are declared specification, not drift.** The register marks them `[spec]` and names
+the stage that will own each in its "enforced in / earliest it can land" table. Report them as
+specification with no module by design — "a row with no module" is a finding for rows 1–8 only.
+Do still flag drift in either direction: a row 9–13 whose `[spec]` marker has been dropped while
+no module appeared, or a module declaring `RISK_ROW` 9–13 while the register still lists that row
+as specification.
 
 Flag a row with a module but no test, a test file with no assertions about the violation, and any
 module whose `RISK_ROW` disagrees with the row its docstring names.

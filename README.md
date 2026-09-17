@@ -187,6 +187,11 @@ All are deterministic and enforced outside the LLM's control.
 | 7 | **Rollback plan required** | Reject any proposal without a defined rollback step |
 | 8 | Documented **false-positive tolerance** | A designed trade-off, tracked over time — not an accident |
 
+Rows 9–13 of the register — execution-time staleness, unverified outcome, approval expiry,
+concurrent runs, and classification provenance — are **specification with no code behind them**,
+marked `[spec]` there. They are deliberately absent from this table, which describes the rules the
+Validator enforces.
+
 ### Approval-path scoring
 
 Every proposal is scored on three axes rather than a single approve/reject bit:
@@ -288,8 +293,9 @@ claims compliance.
 **NIST AI RMF** — the anchor. Voluntary, free, four functions: Govern, Map, Measure, Manage. Two
 describe this repo.
 
-*Govern* covers the Validator, the risk register, and the IAM scoping — eight risk rows, each with
-a detection signal and a hard rule enforced outside the LLM.
+*Govern* covers the Validator, the risk register, and the IAM scoping — each risk row carries a
+detection signal and a hard rule enforced outside the LLM, and five of the thirteen rows are
+specification, marked as such in the register.
 [ADR-0003](docs/adr/0003-no-llm-in-validator.md)'s "no LLM in the safety gate" is the governance
 commitment; the CI drift check on the Executor's policy stops it decaying into an intention.
 
