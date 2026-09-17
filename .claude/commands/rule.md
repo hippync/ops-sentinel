@@ -5,6 +5,12 @@ argument-hint: <risk row number>
 
 Implement the Validator rule for risk register row **$1**.
 
+This applies to rows 1–8, and to row 13. Rows 9–12 are specification and are **not** Validator
+rules — they are enforced in the Executor or the graph runtime; see the register's "enforced in /
+earliest it can land" table before starting one. Row 13 *is* a Validator rule: it lands as
+`validator/classification.py` with `RISK_ROW = 13`, consumed by `scoring.py`, and the register's
+sub-table is its spec.
+
 ## Read the spec before writing anything
 
 The spec already exists in three places. Read all three; do not invent requirements.
