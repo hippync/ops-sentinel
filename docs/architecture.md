@@ -269,7 +269,8 @@ test asserts that absence alongside the `worker`→`executor` one.
 | Worker exceeds iteration cap | Fail loudly, page human, log partial state — no proposal emitted |
 | Validator rejects | Log verdict + reasoning, page human, nothing executes |
 | Triage can't classify | Route straight to human; no speculative diagnosis |
-| Executor's AWS call fails | Log, page human, attempt the recorded rollback, never retry blindly |
+| Executor's AWS call fails | Log, page a human with the recorded rollback attached, never retry and never roll back unattended (risk row 10, specification) |
+| Call succeeds, the alarm keeps firing | Verification stage records the outcome either way and pages a human with the rollback attached, routed strict; nothing rolls back unattended (risk row 10, specification) |
 | Approval record missing/mismatched at Executor | Drop, log as a **security event** — this indicates a bypass attempt |
 | LLM provider unavailable | Pipeline fails closed; the incident routes to a human as it would today |
 
