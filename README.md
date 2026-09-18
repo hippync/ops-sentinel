@@ -7,11 +7,13 @@ between "an AI proposed something" and "something executes."
 > ### Build status — Sprint 1 of 6
 >
 > **Working today:** typed stage contracts, an unforgeable content-derived `proposal_hash`,
-> the `rollback` (risk row 7) and `blast_radius` (risk row 1) Validator rules with tests,
-> and a CI check that fails if the Executor's IAM policy drifts from its action set.
+> the `rollback` (risk row 7), `blast_radius` (risk row 1) and `secrets` (risk row 2)
+> Validator rules with tests, and a CI check that fails if the Executor's IAM policy
+> drifts from its action set.
 >
-> **Not built yet:** the remaining four Validator rules, Triage, Worker, Executor, the
-> decision-point extraction layer, the sandbox app's endpoints, and all AWS infrastructure.
+> **Not built yet:** the remaining three Validator rules, redaction at the rendering
+> boundaries, Triage, Worker, Executor, the decision-point extraction layer, the sandbox
+> app's endpoints, and all AWS infrastructure.
 > Sections below describe the design those will implement — read them as specification, not
 > as a description of running code. **No miss rate has been measured yet**; every number in
 > the extraction section is a target.

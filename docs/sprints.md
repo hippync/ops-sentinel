@@ -49,7 +49,7 @@ The differentiator, plus the thing that makes every later sprint independent of 
 
 - [x] `rollback.py` + tests — risk row 7
 - [x] `blast_radius.py` + tests — risk row 1 (runs over the rollback action too)
-- [ ] `secrets.py` + tests — risk row 2 (rejects; redaction lives in `audit/redaction.py`)
+- [x] `secrets.py` + tests — risk row 2 (rejects; redaction lives in `audit/redaction.py`)
 - [ ] `cost_ceiling.py` + tests — risk row 4
 - [ ] `injection.py` + tests — risk row 5, including the playbook constraint
 - [ ] `scoring.py` — severity × confidence × reversibility → fast-path or strict

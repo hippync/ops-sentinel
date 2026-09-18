@@ -171,10 +171,15 @@ class RuleOutcome(BaseModel):
     risk_row: int
     passed: bool
     detail: str
+    """Why, in terms the audit log can be read without the source beside it. Names the
+    offending value — EXCEPT where the value is the violation: a rule matching on secret
+    or PII content names the pattern and the field path instead, since this string reaches
+    the audit log (see validator/secrets.py)."""
     subject: Literal["action", "rollback_action", "proposal"] = "proposal"
-    """Which part of the proposal this outcome refers to. The same rule runs over both
-    the primary action and the rollback action, and the audit log must distinguish
-    them."""
+    """Which part of the proposal this outcome refers to. A rule with a per-action
+    disposition sets it, because the same rule runs over both the primary action and the
+    rollback action and the audit log must distinguish them. A rule whose disposition is
+    proposal-level leaves it `proposal` and reports the location in `detail`."""
 
 
 class Verdict(BaseModel):
