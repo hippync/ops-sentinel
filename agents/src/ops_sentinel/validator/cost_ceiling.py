@@ -20,9 +20,11 @@ this system is unwilling to pay for. The register's wording predates the typed p
 
 The register also offers "max-instance-count / max-spend-delta". Only the first is
 computable here. A `FixProposal` carries no view of the service's *current* count, so a
-delta cannot be derived; this rule bounds the absolute target count, in both directions.
-A scale-down to a count still above the ceiling is rejected, correctly — the resulting
-spend is what the row is about, not the direction of travel.
+delta cannot be derived — and for the same reason the *direction* of a scale is not
+observable either. This rule sees one integer and bounds it. A scale-down whose target is
+still above the ceiling is therefore rejected like any other count above the ceiling,
+not as a case this rule can tell apart: the resulting spend is what the row is about, not
+the direction of travel.
 
 Run over BOTH the primary action and the rollback action. A rollback can itself be a
 `set_desired_count`, and a proposal whose cheap primary action is undone by a rollback
@@ -50,33 +52,30 @@ RULE = "cost_ceiling"
 
 _Subject = Literal["action", "rollback_action"]
 
-__all__ = ["MAX_DESIRED_COUNT", "RISK_ROW", "RULE", "check"]
-
 
 def check(action: Action, subject: _Subject = "action") -> RuleOutcome:
     """Return the outcome of the cost ceiling rule. Never raises on bad input."""
     params = action.params
 
     if not isinstance(params, SetDesiredCountParams):
-        return _outcome(
+        return RuleOutcome(
+            rule=RULE,
+            risk_row=RISK_ROW,
             passed=True,
             detail=f"{action.action_type} sets no instance count; the ceiling does not apply",
             subject=subject,
         )
 
     if params.desired_count > MAX_DESIRED_COUNT:
-        return _outcome(
-            passed=False,
-            detail=(
-                f"Desired count {params.desired_count} on {action.target_resource_id} is "
-                f"above the ceiling of {MAX_DESIRED_COUNT}; this count cannot be bounded "
-                f"in IAM, so this rule and the Executor's re-check are the only controls "
-                f"that act before the call"
-            ),
-            subject=subject,
+        return _fail(
+            f"Desired count {params.desired_count} on {action.target_resource_id} is above "
+            f"the ceiling of {MAX_DESIRED_COUNT}",
+            subject,
         )
 
-    return _outcome(
+    return RuleOutcome(
+        rule=RULE,
+        risk_row=RISK_ROW,
         passed=True,
         detail=(
             f"Desired count {params.desired_count} on {action.target_resource_id} is within "
@@ -86,7 +85,7 @@ def check(action: Action, subject: _Subject = "action") -> RuleOutcome:
     )
 
 
-def _outcome(*, passed: bool, detail: str, subject: _Subject) -> RuleOutcome:
+def _fail(detail: str, subject: _Subject) -> RuleOutcome:
     return RuleOutcome(
-        rule=RULE, risk_row=RISK_ROW, passed=passed, detail=detail, subject=subject
+        rule=RULE, risk_row=RISK_ROW, passed=False, detail=detail, subject=subject
     )

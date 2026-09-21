@@ -6,22 +6,26 @@ here. These tests cover what is left of the row: whether the bound the Worker *d
 specify is one this system is willing to pay for. They also cover the rollback action,
 which can itself be a scale and is a path to the same Executor.
 
-The ceiling is read from the module rather than written as a literal. It is the author's
-judgment call, and a test that hard-codes it would have to be edited to change it.
+The ceiling is read from `config` rather than written as a literal. It is the author's
+judgment call, and a test that hard-coded it would have to be edited to change it.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from ops_sentinel.schemas import Action, FixProposal, SetDesiredCountParams
+from ops_sentinel.config import MAX_DESIRED_COUNT
+from ops_sentinel.schemas import (
+    ActionParams,
+    FixProposal,
+    RestartServiceParams,
+    RollbackTaskDefinitionParams,
+    RuleOutcome,
+    SetDesiredCountParams,
+)
 from ops_sentinel.validator import cost_ceiling
 
-CEILING = cost_ceiling.MAX_DESIRED_COUNT
-
-
-def _scale(target: str, count: int) -> Action:
-    return Action(target_resource_id=target, params=SetDesiredCountParams(desired_count=count))
+CEILING = MAX_DESIRED_COUNT
 
 
 def test_clean_proposal_action_passes(clean_proposal: FixProposal) -> None:
@@ -41,32 +45,41 @@ def test_non_scale_action_is_not_rejected_for_lacking_a_count(
     assert "sets no instance count" in outcome.detail
 
 
-def test_scale_within_the_ceiling_passes(clean_proposal: FixProposal) -> None:
+def test_restart_service_is_not_rejected_for_lacking_a_count(
+    clean_proposal: FixProposal,
+) -> None:
+    """The other `ActionType` reaching `ecs:UpdateService` (ADR-0007) carries no count.
+
+    `ecs:UpdateService` covers all three action types, so a restart reaches the same IAM
+    action as a scale. It still sets no count, so this row has nothing to bound.
+    """
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.action = _scale(proposal.action.target_resource_id, CEILING - 1)
+    proposal.action.params = RestartServiceParams()
     outcome = cost_ceiling.check(proposal.action)
     assert outcome.passed
+    assert "sets no instance count" in outcome.detail
 
 
-def test_scale_at_the_ceiling_passes(clean_proposal: FixProposal) -> None:
+@pytest.mark.parametrize("count", [1, CEILING - 1, CEILING])
+def test_counts_up_to_the_ceiling_pass(clean_proposal: FixProposal, count: int) -> None:
     """The ceiling is the maximum permitted count, not the first forbidden one."""
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.action = _scale(proposal.action.target_resource_id, CEILING)
+    proposal.action.params = SetDesiredCountParams(desired_count=count)
     assert cost_ceiling.check(proposal.action).passed
 
 
 def test_scale_above_the_ceiling_is_rejected(clean_proposal: FixProposal) -> None:
     """The row's headline case, and one IAM cannot express (ADR-0007)."""
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.action = _scale(proposal.action.target_resource_id, CEILING + 1)
+    proposal.action.params = SetDesiredCountParams(desired_count=CEILING + 1)
     outcome = cost_ceiling.check(proposal.action)
     assert not outcome.passed
     assert outcome.subject == "action"
 
 
-@pytest.mark.parametrize("count", [5, 40, 4000])
+@pytest.mark.parametrize("excess", [1, 5, 40, 4000])
 def test_rejection_names_the_count_and_the_ceiling(
-    clean_proposal: FixProposal, count: int
+    clean_proposal: FixProposal, excess: int
 ) -> None:
     """The audit log must be readable without the source beside it.
 
@@ -74,10 +87,10 @@ def test_rejection_names_the_count_and_the_ceiling(
     the ceiling too, so a detail-only assertion would stay green with the guard removed.
     """
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.action = _scale(proposal.action.target_resource_id, CEILING + count)
+    proposal.action.params = SetDesiredCountParams(desired_count=CEILING + excess)
     outcome = cost_ceiling.check(proposal.action)
     assert not outcome.passed
-    assert str(CEILING + count) in outcome.detail
+    assert str(CEILING + excess) in outcome.detail
     assert f"ceiling of {CEILING}" in outcome.detail
 
 
@@ -88,7 +101,7 @@ def test_rollback_scale_above_the_ceiling_is_rejected(clean_proposal: FixProposa
     same money, and `subject` is what lets the audit log say which one did it.
     """
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.rollback.action = _scale(proposal.action.target_resource_id, CEILING + 1)
+    proposal.rollback.action.params = SetDesiredCountParams(desired_count=CEILING + 1)
     outcome = cost_ceiling.check(proposal.rollback.action, "rollback_action")
     assert not outcome.passed
     assert outcome.subject == "rollback_action"
@@ -102,12 +115,27 @@ def test_scale_to_zero_passes(clean_proposal: FixProposal) -> None:
     rejection for an action that costs nothing. See the module's residual risk.
     """
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.action = _scale(proposal.action.target_resource_id, 0)
+    proposal.action.params = SetDesiredCountParams(desired_count=0)
     assert cost_ceiling.check(proposal.action).passed
 
 
-def test_check_never_raises(clean_proposal: FixProposal) -> None:
-    """The gate must return a verdict, not an exception. A crashing validator fails open."""
+@pytest.mark.parametrize(
+    "params",
+    [
+        SetDesiredCountParams(desired_count=2**31),
+        SetDesiredCountParams(desired_count=0),
+        RestartServiceParams(),
+        RollbackTaskDefinitionParams(target_revision=1),
+    ],
+)
+def test_check_never_raises(clean_proposal: FixProposal, params: ActionParams) -> None:
+    """The gate must return a verdict, not an exception. A crashing validator fails open.
+
+    Covers both arms of the rule: the `isinstance` guard that lets a countless action
+    through, and the comparison behind it. A blank target is not this rule's business
+    (that is row 1), so it must not perturb either arm.
+    """
     proposal = clean_proposal.model_copy(deep=True)
-    proposal.action = _scale("   ", 2**31)
-    assert cost_ceiling.check(proposal.action).passed is False
+    proposal.action.target_resource_id = "   "
+    proposal.action.params = params
+    assert isinstance(cost_ceiling.check(proposal.action), RuleOutcome)
