@@ -23,6 +23,8 @@ Residual risk: novel injection techniques not covered by the test suite.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from ops_sentinel.schemas import ActionType, FixProposal, Incident, IncidentType, RuleOutcome
 
 RISK_ROW = 5
@@ -44,4 +46,57 @@ PLAYBOOK: dict[IncidentType, frozenset[ActionType]] = {
 
 
 def check(proposal: FixProposal, incident: Incident) -> RuleOutcome:
-    raise NotImplementedError("Sprint 1")
+    """Return the outcome of the injection rule. Never raises on bad input.
+
+    Reads only structured fields. Nothing in `diagnosis`, `Evidence.excerpt` or any other
+    Worker-authored text is consulted, which is what "treat ingested content as data"
+    means here: the text cannot reach this decision to influence it.
+    """
+    action = proposal.action
+    target = action.target_resource_id
+
+    if target not in incident.affected_resource_ids:
+        return _fail(
+            f"Action targets {target!r}, which is not among the incident's affected "
+            f"resources ({_names(incident.affected_resource_ids)}); those come from the "
+            f"alarm's dimensions, so this target is not derivable from incident data"
+        )
+
+    permitted = PLAYBOOK.get(incident.incident_type)
+
+    if permitted is None:
+        return _fail(
+            f"Incident type {incident.incident_type} has no playbook entry, so no action "
+            f"is derivable from it; a missing entry rejects rather than permitting every "
+            f"action"
+        )
+
+    if action.action_type not in permitted:
+        return _fail(
+            f"Action type {action.action_type} is not in the playbook for "
+            f"{incident.incident_type}, which permits "
+            f"{_names(sorted(t.value for t in permitted))}; the incident type comes from "
+            f"alarm metadata, so log text cannot widen this set"
+        )
+
+    return RuleOutcome(
+        rule=RULE,
+        risk_row=RISK_ROW,
+        passed=True,
+        detail=(
+            f"{action.action_type} on {target} is in the incident's affected resources "
+            f"and in the playbook for {incident.incident_type}"
+        ),
+        subject="action",
+    )
+
+
+def _names(values: Iterable[str]) -> str:
+    """Render a set for the audit log. An empty one reads as `none`, never as `()`."""
+    return ", ".join(values) or "none"
+
+
+def _fail(detail: str) -> RuleOutcome:
+    return RuleOutcome(
+        rule=RULE, risk_row=RISK_ROW, passed=False, detail=detail, subject="action"
+    )
