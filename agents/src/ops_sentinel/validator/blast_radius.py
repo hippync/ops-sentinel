@@ -27,21 +27,17 @@ a target, not its existence; it cannot know that two services answer to one name
 
 from __future__ import annotations
 
-from typing import Literal
-
-from ops_sentinel.schemas import Action, RuleOutcome
+from ops_sentinel.schemas import Action, ActionSubject, RuleOutcome
 
 RISK_ROW = 1
 RULE = "blast_radius"
-
-_Subject = Literal["action", "rollback_action"]
 
 _WILDCARD_CHARS = frozenset("*?[]")
 _TAG_PREFIX = "tag:"
 _LIST_SEPARATORS = frozenset(",;")
 
 
-def check(action: Action, subject: _Subject = "action") -> RuleOutcome:
+def check(action: Action, subject: ActionSubject = "action") -> RuleOutcome:
     """Return the outcome of the blast radius rule. Never raises on bad input."""
     target = action.target_resource_id
     stripped = target.strip()
@@ -79,7 +75,7 @@ def check(action: Action, subject: _Subject = "action") -> RuleOutcome:
     )
 
 
-def _fail(detail: str, subject: _Subject) -> RuleOutcome:
+def _fail(detail: str, subject: ActionSubject) -> RuleOutcome:
     return RuleOutcome(
         rule=RULE, risk_row=RISK_ROW, passed=False, detail=detail, subject=subject
     )

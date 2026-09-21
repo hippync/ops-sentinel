@@ -166,6 +166,12 @@ class FixProposal(BaseModel):
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+ActionSubject = Literal["action", "rollback_action"]
+"""The two per-action subjects. A rule that runs over both the primary action and the
+rollback action takes one of these; declaring it here rather than per module keeps the
+rules and `RuleOutcome.subject` from drifting apart."""
+
+
 class RuleOutcome(BaseModel):
     rule: str
     risk_row: int
@@ -175,7 +181,7 @@ class RuleOutcome(BaseModel):
     offending value — EXCEPT where the value is the violation: a rule matching on secret
     or PII content names the pattern and the field path instead, since this string reaches
     the audit log (see validator/secrets.py)."""
-    subject: Literal["action", "rollback_action", "proposal"] = "proposal"
+    subject: ActionSubject | Literal["proposal"] = "proposal"
     """Which part of the proposal this outcome refers to. A rule with a per-action
     disposition sets it, because the same rule runs over both the primary action and the
     rollback action and the audit log must distinguish them. A rule whose disposition is
