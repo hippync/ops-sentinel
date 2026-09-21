@@ -92,6 +92,13 @@ No AWS. No Java. Recorded payloads and read-only tool stubs only.
 - [ ] **Integration test asserting graph topology**: no path from `worker` to `executor`
       bypasses `validator` and `approval`. This is the single most load-bearing claim in
       the architecture and nothing currently enforces it
+- [ ] **The Validator stage runs each rule behind a boundary that cannot fail open** — a rule
+      that raises becomes a failed `RuleOutcome`, not an escaped exception. Every `check()`
+      already promises it never raises and every rule has a `test_..._never_raises`, but the
+      promise is only load-bearing once something enforces it *outside* the rules: the same
+      reason row 3's caps live in the graph runtime and not in the prompt. Deliberately not
+      solved with a defensive type guard inside each rule, which would be one copy per rule
+      and would put the limit back inside the thing it limits
 - [ ] **OpenTelemetry instrumentation** on the graph, Triage and Worker, using the GenAI
       semantic conventions ([ADR-0008](adr/0008-decision-point-extraction.md) component 1).
       Lands here because this is when spans first exist, and it pays for itself in debugging
