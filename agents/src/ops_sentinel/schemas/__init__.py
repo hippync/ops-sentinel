@@ -7,6 +7,7 @@ rather than deep inside the Validator. See docs/architecture.md section 2.
 from ops_sentinel.schemas.models import (
     Action,
     ActionParams,
+    ActionSubject,
     ActionType,
     ApprovalPath,
     ApprovalRecord,
@@ -27,6 +28,7 @@ from ops_sentinel.schemas.models import (
 __all__ = [
     "Action",
     "ActionParams",
+    "ActionSubject",
     "ActionType",
     "ApprovalPath",
     "ApprovalRecord",
